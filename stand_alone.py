@@ -8,7 +8,7 @@ import argparse
 
 # minimal average of selected checkbox
 CHECKBOX_THRESHOLD = 216
-CHECKBOX_BAD_THRESHOLD = 120
+CHECKBOX_BAD_THRESHOLD = 100
 
 #Pages to parse
 PAGES_FOR_CLASS = {"4":(3,5,7,9,10,11)}
@@ -35,11 +35,12 @@ def parse_image (name):
         return
     qr = qrs[0]
     if not('P' in qr.data):
-        sys.stderr.write("No page within QR code (image %s)\n"%(name))
+        sys.stderr.write("No page in QR code (image %s)\n"%(name))
         return
     page = int(qr.data.split("P")[-1])
     work_id = qr.data.rsplit('P')[0].split("-")[1]
-    if page in (3,5,7,9,10,11): #Pages to parse
+    cl = work_id[0]
+    if page in PAGES_FOR_CLASS[cl]:
         try:
             result = decode_result(im, qr)
             sys.stdout.write("%s\t%s\t%d\t%d\n"%(work_id, page, result[0],result[1]))
@@ -58,14 +59,15 @@ def decode_result(im, qr_code):
             t1 = t + 127 + j*53 + 3
             sub_image = im[t1:t1+h1,l1:l1+w1]
             average_color = np.average(sub_image, axis=0).min()
-            if average_color < 210:
+            if (average_color < CHECKBOX_THRESHOLD and
+                average_color > CHECKBOX_BAD_THRESHOLD) :
                 if not(detected):
                     detected = True
                     result_j = 7-i
                 else:
-                    raise RuntimeError("too many detected squares: %d"%j)
+                    raise RuntimeError("too many squares detected on line: %d"%(j+1))
         if not(detected):
-            raise RuntimeError("no detected squares: %d"%j)
+            raise RuntimeError("no squares detected on line: %d"%(j+1))
         result.append(result_j)
     return result
 
@@ -79,10 +81,12 @@ def debug_result(im, qr_code):
             l1 = l - 252 - int(i*47.5) + 3
             t1 = t + 127 + j*53 + 3
             sub_image = im[t1:t1+h1,l1:l1+w1]
-            cv2.imwrite("test/%d%d.png)"%(i,j),sub_image)
+            cv2.imwrite("test/%d%d.png"%(i,j),sub_image)
             average_color = np.average(sub_image, axis=0).min()
             print average_color
-            if average_color < 205:
+            if (average_color < CHECKBOX_THRESHOLD and
+                average_color > CHECKBOX_BAD_THRESHOLD) :
+                detected = True
                 print 7-i
         if not(detected):
             print("no detected squares: %d"%j)
@@ -105,3 +109,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+#:vi:et
