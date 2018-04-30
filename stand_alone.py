@@ -21,75 +21,56 @@ def find_qr(im) :
     return decodedObjects
 
 
-def parse_image (name):
+def parse_image (name, is_debug=False):
     im = cv2.imread(name)
     if im is None:
-        sys.stderr.write("no image %s\n"%(name))
-        return
+        raise RuntimeError ("No image %s\n"%(name))
     qrs = pyzbar.decode(cv2.threshold(im, 127, 255, cv2.THRESH_BINARY)[1])
     if len(qrs) == 0:
-        sys.stderr.write("no QR found on image %s\n"%(name))
-        return
+        raise RuntimeError ("No QR found on image %s\n"%(name))
     if len(qrs) > 1:
-        sys.stderr.write("Too many QRs on image %s\n"%(name))
-        return
+        raise RuntimeError ("Too many QRs on image %s\n"%(name))
     qr = qrs[0]
     if not('P' in qr.data):
-        sys.stderr.write("No page in QR code (image %s)\n"%(name))
-        return
+        raise RuntimeError ("No page in QR code (image %s)\n"%(name))
     page = int(qr.data.split("P")[-1])
     work_id = qr.data.rsplit('P')[0].split("-")[1]
     cl = work_id[0]
     if page in PAGES_FOR_CLASS[cl]:
         try:
-            result = decode_result(im, qr)
-            sys.stdout.write("%s\t%s\t%d\t%d\n"%(work_id, page, result[0],result[1]))
+            result = decode_result(im, qr, is_debug)
+            return "%s\t%s\t%d\t%d\n"%(work_id, page, result[0],result[1])
         except RuntimeError as e:
-            sys.stderr.write("Not parsed:%s, %s (image: %s): %s\n"%(work_id,page, name, e))
+            raise RuntimeError ("Not parsed:%s, %s (image: %s): %s\n"%(work_id,page, name, e))
 
 
-def decode_result(im, qr_code):
+def decode_result(im, qr_code, is_debug):
     (l, t, w, h) = qr_code.rect
     w1 = h1 = 14
     result = []
     for j in range (2):
+        result_j = -1
         detected = False
         for i in range (8):
             l1 = l - 252 - int(i*47.5) + 3
             t1 = t + 127 + j*53 + 3
             sub_image = im[t1:t1+h1,l1:l1+w1]
             average_color = np.average(sub_image, axis=0).min()
+            if is_debug:
+                print average_color
+                cv2.imwrite("test/%d.%d.png"%(7-i,j+1),sub_image)
             if (average_color < CHECKBOX_THRESHOLD and
                 average_color > CHECKBOX_BAD_THRESHOLD) :
-                if not(detected):
-                    detected = True
-                    result_j = 7-i
-                else:
+                if detected and not(is_debug):
                     raise RuntimeError("too many squares detected on line: %d"%(j+1))
-        if not(detected):
+                detected = True
+                result_j = 7-i
+                if (is_debug):
+                    print 7-i
+        if not(detected) and not(is_debug):
             raise RuntimeError("no squares detected on line: %d"%(j+1))
         result.append(result_j)
     return result
-
-def debug_result(im, qr_code):
-    (l, t, w, h) = qr_code.rect
-    w1 = h1 = 14
-    result = []
-    for j in range (2):
-        detected = False
-        for i in range (8):
-            l1 = l - 252 - int(i*47.5) + 3
-            t1 = t + 127 + j*53 + 3
-            sub_image = im[t1:t1+h1,l1:l1+w1]
-            cv2.imwrite("test/%d%d.png"%(i,j),sub_image)
-            average_color = np.average(sub_image, axis=0).min()
-            print average_color
-            if (average_color < CHECKBOX_THRESHOLD and
-                average_color > CHECKBOX_BAD_THRESHOLD) :
-                detected = True
-                print 7-i
-        if not(detected):
-            print("no detected squares: %d"%j)
 
 
 def main():
@@ -97,14 +78,14 @@ def main():
     parser.add_argument('--debug', help='run on one particular image and create debug information', metavar="IMG")
     args = parser.parse_args()
     if args.debug:
-        name = args.debug
-        im = cv2.imread(name)
-        qr = pyzbar.decode(cv2.threshold(im, 127, 255, cv2.THRESH_BINARY)[1])[0]
-        debug_result(im, qr)
-        return()
+        parse_image(args.debug, True)
+        return
     for l in sys.stdin:
         name = l[:-1]
-        parse_image(name)
+        try:
+            sys.stdout.write(parse_image(name))
+        except RuntimeError as e:
+            sys.stderr.write("%s"%e)
 
 
 if __name__ == '__main__':
